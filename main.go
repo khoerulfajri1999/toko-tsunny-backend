@@ -22,5 +22,7 @@ func main() {
 	routes.TransactionRoutes(router)
 
 	log.Println("Server started on port 8080")
-	http.ListenAndServe(":8080", router)
+	if err := http.ListenAndServe(":8080", router); err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
 }

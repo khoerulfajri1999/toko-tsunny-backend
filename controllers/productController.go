@@ -1,12 +1,14 @@
 package controllers
 
 import (
+	"encoding/json"
 	"fmt"
 	"go-jwt/configs"
 	"go-jwt/helpers"
 	"go-jwt/models"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 )
@@ -76,30 +78,36 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:    product.CreatedAt,
 		UpdatedAt:    product.UpdatedAt,
 	}
+	configs.Redis.FlushDB(configs.RedisCtx)
 	helpers.Response(w, 201, "Product created successfully", productResponse)
 }
 
 func GetAllProduct(w http.ResponseWriter, r *http.Request) {
-	// Ambil query parameter page dan limit, default: page=1, limit=10
 	pageStr := r.URL.Query().Get("page")
 	limitStr := r.URL.Query().Get("limit")
 
 	page := 1
 	limit := 10
 
-	if pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
+	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+		page = p
 	}
-
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
 	}
 
 	offset := (page - 1) * limit
+	cacheKey := fmt.Sprintf("products:page=%d:limit=%d", page, limit)
+
+	// Cek Redis
+	val, err := configs.Redis.Get(configs.RedisCtx, cacheKey).Result()
+	if err == nil {
+		var cachedProducts []models.ProductResponse
+		if err := json.Unmarshal([]byte(val), &cachedProducts); err == nil {
+			helpers.Response(w, 200, "Success get all products (from cache)", cachedProducts)
+			return
+		}
+	}
 
 	var products []models.Product
 	if err := configs.DB.Preload("Category").Limit(limit).Offset(offset).Find(&products).Error; err != nil {
@@ -125,12 +133,27 @@ func GetAllProduct(w http.ResponseWriter, r *http.Request) {
 		productResponses = append(productResponses, productResponse)
 	}
 
+	// Simpan ke Redis
+	jsonData, _ := json.Marshal(productResponses)
+	configs.Redis.Set(configs.RedisCtx, cacheKey, jsonData, 5*time.Minute)
+
 	helpers.Response(w, 200, "Success get all products", productResponses)
 }
 
 func GetProductById(w http.ResponseWriter, r *http.Request) {
-	params := mux.Vars(r)
-	id := params["id"]
+	id := mux.Vars(r)["id"]
+	cacheKey := fmt.Sprintf("product:%s", id)
+
+	// Cek Redis
+	val, err := configs.Redis.Get(configs.RedisCtx, cacheKey).Result()
+	if err == nil {
+		var cachedProduct models.ProductResponse
+		if err := json.Unmarshal([]byte(val), &cachedProduct); err == nil {
+			helpers.Response(w, 200, "Success get product (from cache)", cachedProduct)
+			return
+		}
+	}
+
 	idFromParam, err := strconv.Atoi(id)
 	if err != nil {
 		helpers.Response(w, 400, "Invalid product id", nil)
@@ -158,8 +181,13 @@ func GetProductById(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:    product.UpdatedAt,
 	}
 
+	// Simpan ke Redis
+	jsonData, _ := json.Marshal(productResponse)
+	configs.Redis.Set(configs.RedisCtx, cacheKey, jsonData, 5*time.Minute)
+
 	helpers.Response(w, 200, "Success get product", productResponse)
 }
+
 
 func UpdateProductById(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
@@ -254,7 +282,7 @@ func UpdateProductById(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:    product.CreatedAt,
 		UpdatedAt:    product.UpdatedAt,
 	}
-
+	configs.Redis.FlushDB(configs.RedisCtx)
 	helpers.Response(w, 200, "Success update product", response)
 }
 
@@ -278,5 +306,6 @@ func DeleteProductById(w http.ResponseWriter, r *http.Request) {
 		helpers.Response(w, 400, "Error deleting product", nil)
 		return
 	}
+	configs.Redis.FlushDB(configs.RedisCtx)
 	helpers.Response(w, 200, "Success delete product", nil)
 }
