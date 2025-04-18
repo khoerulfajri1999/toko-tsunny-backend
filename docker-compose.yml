@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    container_name: go-app
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_USER=root
+      - DB_PASS=Arul15021999.
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=go_jwt
+      - REDIS_HOST=redis:6379
+      - REDIS_PASSWORD=
+    depends_on:
+      - mysql
+      - redis
+
+  mysql:
+    image: mysql:8
+    container_name: mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: Arul15021999.
+      MYSQL_DATABASE: go_jwt
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: always
+    ports:
+      - "6380:6379"
+
+volumes:
+  mysql-data:
